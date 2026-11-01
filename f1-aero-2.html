@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERO-X // F1 Constructor CFD & DRS Telemetry Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['"Chakra Petch"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        f1red: '#E10600',
+                        f1cyan: '#00F0FF',
+                        f1green: '#00FF66',
+                        f1amber: '#FFB800',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #07080a;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.07) 0%, transparent 60%),
+                repeating-linear-gradient(45deg, #0b0c10 0px, #0b0c10 2px, #07080a 2px, #07080a 6px);
+            color: #f1f5f9;
+            overflow-x: hidden;
+        }
+        
+        .carbon-card {
+            background: linear-gradient(145deg, rgba(19, 22, 29, 0.92), rgba(11, 13, 18, 0.96));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(12px);
+        }
+
+        /* Custom Range Sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            background: #1e2430;
+            height: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            margin-top: -6px;
+            background-color: #00F0FF;
+            height: 18px;
+            width: 12px;
+            border-radius: 2px;
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
+            transition: transform 0.1s ease, background-color 0.2s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            background-color: #ffffff;
+        }
+
+        .drs-glow-active {
+            box-shadow: 0 0 35px rgba(0, 255, 102, 0.35), inset 0 0 20px rgba(0, 255, 102, 0.2);
+            border-color: #00FF66 !important;
+        }
+        .drs-glow-inactive {
+            box-shadow: 0 0 25px rgba(225, 6, 0, 0.2), inset 0 0 15px rgba(225, 6, 0, 0.1);
+            border-color: rgba(225, 6, 0, 0.5) !important;
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2300F0FF' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.6rem center;
+            background-repeat: no-repeat;
+            background-size: 1.4em 1.4em;
+            padding-right: 2.5rem;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-3 md:p-5 select-none">
+
+    <!-- TOP NAVIGATION / TELEMETRY HEADER -->
+    <header id="headerCard" class="carbon-card rounded-xl px-5 py-3 mb-4 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-f1cyan transition-colors duration-300">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div id="brandStripePrimary" class="w-3 h-7 bg-[#E10600] skew-x-[-18deg] transition-colors"></div>
+                <div id="brandStripeSecondary" class="w-1.5 h-7 bg-[#00F0FF] skew-x-[-18deg] transition-colors"></div>
+            </div>
+            <div>
+                <div class="flex items-center gap-2.5 flex-wrap">
+                    <h1 class="font-display font-bold text-xl md:text-2xl tracking-wider uppercase text-white">
+                        AERO-X <span class="text-f1cyan font-normal">//</span> CFD WIND TUNNEL
+                    </h1>
+                    <span id="teamChassisBadge" class="text-[10px] font-mono uppercase px-2 py-0.5 bg-blue-500/15 text-blue-300 border border-blue-400/40 rounded font-semibold">
+                        RED BULL RACING // LOW-DRAG V-MAX CONCEPT
+                    </span>
+                </div>
+                <p id="teamAeroPhilosophy" class="text-xs text-slate-400 font-mono">
+                    HIGH TOP-SPEED PROFILE (LOW BASELINE DRAG Cd, STABLE VENTURI DOWNFORCE Cl)
+                </p>
+            </div>
+        </div>
+
+        <!-- Team Selector + View Mode Toggles & Status -->
+        <div class="flex items-center gap-3 flex-wrap">
+            <!-- Select F1 Team Dropdown -->
+            <div class="flex items-center gap-2 bg-slate-950/90 px-3 py-1.5 rounded-lg border border-white/15">
+                <label for="teamSelect" class="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    SELECT F1 TEAM:
+                </label>
+                <select id="teamSelect" class="bg-slate-900 text-white font-mono text-xs font-bold py-1 pl-2.5 rounded border border-white/10 focus:outline-none focus:border-f1cyan cursor-pointer">
+                    <option value="redbull">1. Red Bull Racing (Low Cd / High V-Max)</option>
+                    <option value="mclaren">2. McLaren (Papaya All-Around Balance)</option>
+                    <option value="ferrari">3. Ferrari (Supreme Cornering Load Cl)</option>
+                    <option value="mercedes">4. Mercedes (Stable Ground-Effect Floor)</option>
+                    <option value="alpine">5. Alpine F1 Team (High-Drag Outlier)</option>
+                </select>
+            </div>
+
+            <div class="flex bg-slate-900/90 p-1 rounded-lg border border-white/10 text-xs font-mono">
+                <button id="modeStreamlines" class="px-3 py-1.5 rounded-md bg-f1cyan text-slate-950 font-bold transition-all">
+                    RIBBON VECTORS
+                </button>
+                <button id="modeParticles" class="px-3 py-1.5 rounded-md text-slate-300 hover:text-white transition-all">
+                    SMOKE PARTICLES
+                </button>
+            </div>
+
+            <button id="toggleForceVectors" class="px-3 py-1.5 rounded-lg text-xs font-mono border border-f1amber/50 bg-f1amber/10 text-f1amber hover:bg-f1amber/20 transition-all">
+                LOAD ARROWS: ON
+            </button>
+
+            <div class="hidden xl:flex items-center gap-2 bg-slate-950/90 px-3 py-1.5 rounded-lg border border-white/10 font-mono text-xs">
+                <span class="w-2 h-2 rounded-full bg-f1green animate-pulse"></span>
+                <span class="text-slate-400">SOLVER:</span>
+                <span id="fpsCounter" class="text-white font-bold">60 FPS</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT GRID -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+        
+        <!-- LEFT COLUMN: WIND TUNNEL CANVAS + TELEMETRY CARDS -->
+        <div class="lg:col-span-8 xl:col-span-9 flex flex-col gap-4">
+            
+            <!-- 2D WIND TUNNEL CANVAS CONTAINER -->
+            <div class="carbon-card rounded-xl relative flex-1 min-h-[390px] md:min-h-[460px] overflow-hidden flex flex-col justify-between border border-white/10">
+                
+                <!-- Top Canvas HUD Overlay -->
+                <div class="relative z-10 flex flex-wrap justify-between items-start p-4 pointer-events-none gap-2">
+                    <div class="bg-slate-950/85 backdrop-blur-md border border-white/10 rounded-lg px-3.5 py-2 font-mono flex items-center gap-4">
+                        <div>
+                            <div class="text-[10px] text-slate-400 uppercase tracking-widest">FREE STREAM VELOCITY (U∞)</div>
+                            <div class="flex items-baseline gap-2">
+                                <span id="hudSpeedKmh" class="text-2xl font-extrabold text-white">305</span>
+                                <span class="text-xs text-f1cyan">km/h</span>
+                                <span class="text-xs text-slate-500">|</span>
+                                <span id="hudSpeedMs" class="text-xs text-slate-300">84.7 m/s</span>
+                            </div>
+                        </div>
+                        <div class="border-l border-white/10 pl-4">
+                            <div class="text-[10px] text-slate-400 uppercase tracking-widest">ACTIVE AERO PACKAGE</div>
+                            <div id="hudActiveTeamName" class="text-sm font-bold text-red-400">ORACLE RED BULL RACING</div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Team Airflow Palette Legend -->
+                    <div class="bg-slate-950/85 backdrop-blur-md border border-white/10 rounded-lg px-3.5 py-2 font-mono text-[11px] flex flex-col gap-1.5">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-slate-400 uppercase tracking-wider text-[10px]">CONSTRUCTOR CFD STREAMLINE PALETTE</span>
+                            <span id="hudPaletteLabel" class="text-[10px] font-bold text-red-400">RED / DARK BLUE</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="flex items-center gap-1.5">
+                                <span id="legendDotLaminar" class="w-2.5 h-2.5 rounded-full inline-block" style="background:#1E41FF"></span>Laminar Stream
+                            </span>
+                            <span class="flex items-center gap-1.5">
+                                <span id="legendDotVenturi" class="w-2.5 h-2.5 rounded-full inline-block" style="background:#FF1801"></span>Venturi / Fast Jet
+                            </span>
+                            <span class="flex items-center gap-1.5">
+                                <span id="legendDotWake" class="w-2.5 h-2.5 rounded-full inline-block" style="background:#FF0040"></span>Pressure Wake Vortex
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HTML5 CFD Simulation Canvas -->
+                <canvas id="windTunnelCanvas" class="absolute inset-0 w-full h-full block"></canvas>
+
+                <!-- Bottom Canvas HUD Overlay -->
+                <div class="relative z-10 flex flex-wrap justify-between items-end p-4 pointer-events-none text-xs font-mono gap-2">
+                    <div class="bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded border border-white/10 text-slate-300 flex items-center gap-4 flex-wrap">
+                        <span>DYNAMIC PRESSURE (q): <strong id="hudDynamicPressure" class="text-f1cyan">4,398 Pa</strong></span>
+                        <span class="text-slate-600">|</span>
+                        <span>AERO EFFICIENCY (L/D): <strong id="hudLdRatio" class="text-f1green">3.52</strong></span>
+                        <span class="text-slate-600">|</span>
+                        <span>TEAM SPEC: <strong id="hudTeamFactors" class="text-amber-300">Cd x0.91 / Cl x1.02</strong></span>
+                    </div>
+                    <div id="hudWakeStatus" class="bg-red-950/80 border border-red-500/40 text-red-300 px-3 py-1.5 rounded uppercase font-semibold tracking-wider">
+                        REAR WING: HIGH-ANGLE EXTRACTION // LARGE PRESSURE WAKE
+                    </div>
+                </div>
+            </div>
+
+            <!-- REAL-TIME MATH TELEMETRY READOUT PANEL -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                <!-- 1. Drag Force Card -->
+                <div class="carbon-card rounded-xl p-4 border-l-4 border-l-f1red relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-1">
+                        <div>
+                            <span class="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">AERODYNAMIC DRAG FORCE</span>
+                            <span class="text-[11px] font-mono text-slate-500">F<sub>D</sub> = ½ &rho; v² C<sub>D</sub> A</span>
+                        </div>
+                        <span id="dragDeltaBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-f1red/15 text-f1red border border-f1red/30 font-semibold">
+                            LOW-DRAG SPEC
+                        </span>
+                    </div>
+                    <div class="flex items-baseline gap-2 my-1">
+                        <span id="telemetryDrag" class="font-mono text-3xl xl:text-4xl font-extrabold text-white tracking-tight">5,296</span>
+                        <span class="font-mono text-sm text-f1red font-bold">N</span>
+                    </div>
+                    <div class="flex justify-between text-xs font-mono text-slate-400 mt-2 pt-2 border-t border-white/5">
+                        <span>Coeff (C<sub>D</sub>): <strong id="telemetryCd" class="text-slate-200">0.803</strong></span>
+                        <span>Aero Power Loss: <strong id="telemetryDragPower" class="text-f1amber">449 kW</strong></span>
+                    </div>
+                </div>
+
+                <!-- 2. Downforce Card -->
+                <div class="carbon-card rounded-xl p-4 border-l-4 border-l-f1cyan relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-1">
+                        <div>
+                            <span class="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">VERTICAL DOWNFORCE</span>
+                            <span class="text-[11px] font-mono text-slate-500">F<sub>L</sub> = ½ &rho; v² C<sub>L</sub> A</span>
+                        </div>
+                        <span id="downforceG" class="text-[10px] font-mono px-2 py-0.5 rounded bg-f1cyan/15 text-f1cyan border border-f1cyan/30 font-semibold">
+                            2.53 G LOAD
+                        </span>
+                    </div>
+                    <div class="flex items-baseline gap-2 my-1">
+                        <span id="telemetryDownforce" class="font-mono text-3xl xl:text-4xl font-extrabold text-white tracking-tight">19,798</span>
+                        <span class="font-mono text-sm text-f1cyan font-bold">N</span>
+                    </div>
+                    <div class="flex justify-between text-xs font-mono text-slate-400 mt-2 pt-2 border-t border-white/5">
+                        <span>Coeff (C<sub>L</sub>): <strong id="telemetryCl" class="text-slate-200">3.001</strong></span>
+                        <span>Eq. Mass: <strong id="telemetryDownforceKg" class="text-slate-200">2,018 kgf</strong></span>
+                    </div>
+                </div>
+
+                <!-- 3. Projected Top Speed Card -->
+                <div class="carbon-card rounded-xl p-4 border-l-4 border-l-f1green relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-1">
+                        <div>
+                            <span class="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">PROJECTED V-MAX (1000 HP PU)</span>
+                            <span class="text-[11px] font-mono text-slate-500">v<sub>max</sub> = [2P / (&rho; C<sub>D</sub> A)]<sup>1/3</sup></span>
+                        </div>
+                        <span id="vmaxGainBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/10 font-semibold">
+                            +0.0 km/h
+                        </span>
+                    </div>
+                    <div class="flex items-baseline gap-2 my-1">
+                        <span id="telemetryTopSpeed" class="font-mono text-3xl xl:text-4xl font-extrabold text-white tracking-tight">344.2</span>
+                        <span class="font-mono text-sm text-f1green font-bold">km/h</span>
+                    </div>
+                    <div class="flex justify-between text-xs font-mono text-slate-400 mt-2 pt-2 border-t border-white/5">
+                        <span id="telemetryTopSpeedMph">213.9 mph</span>
+                        <span>Team Balance: <strong id="telemetryTeamTrait" class="text-slate-200">V-MAX KING</strong></span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: DRS ACTUATOR & WIND TUNNEL CONTROLS -->
+        <div class="lg:col-span-4 xl:col-span-3 flex flex-col gap-4 justify-between">
+            
+            <!-- MASSIVE TOGGLEABLE DRS SWITCH -->
+            <div class="carbon-card rounded-xl p-4 flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                    <span class="font-display font-bold uppercase tracking-wider text-sm text-slate-300 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-f1cyan"></span>
+                        REAR WING ACTUATOR SYSTEM
+                    </span>
+                    <span class="text-[11px] font-mono text-slate-400">85mm MAX SLOT GAP</span>
+                </div>
+
+                <button id="drsToggleBtn" class="w-full py-5 px-4 rounded-xl border-2 transition-all duration-300 drs-glow-inactive bg-gradient-to-b from-slate-900 to-slate-950 flex flex-col items-center justify-center gap-2 cursor-pointer group relative overflow-hidden">
+                    <div class="flex items-center gap-3">
+                        <span id="drsIndicatorDot" class="w-4 h-4 rounded-full bg-f1red shadow-[0_0_12px_#E10600] transition-all"></span>
+                        <span id="drsStateTitle" class="font-display font-extrabold text-2xl sm:text-3xl tracking-wider text-white">
+                            DRS CLOSED
+                        </span>
+                    </div>
+                    <span id="drsStateSubtitle" class="font-mono text-xs uppercase tracking-widest text-red-400">
+                        HIGH DOWNFORCE CORNERING MODE // CLICK TO OPEN FLAP
+                    </span>
+                    
+                    <!-- Actuator Angle Progress Bar -->
+                    <div class="w-full bg-slate-950 h-2 rounded-full mt-2 overflow-hidden border border-white/10">
+                        <div id="drsFlapBar" class="h-full bg-f1red transition-all duration-75" style="width: 8%;"></div>
+                    </div>
+                    <div class="w-full flex justify-between text-[10px] font-mono text-slate-400">
+                        <span>FLAP ANGLE: <strong id="drsAngleReadout" class="text-white">36.0°</strong></span>
+                        <span>DRAG REDUCTION: <strong id="drsDragReductionReadout" class="text-slate-300">0%</strong></span>
+                    </div>
+                </button>
+            </div>
+
+            <!-- INTERACTIVE SLIDERS & TEAM AERO BRIEFING PANEL -->
+            <div class="carbon-card rounded-xl p-5 flex-1 flex flex-col justify-between gap-4">
+                <div>
+                    <!-- Constructor Aero Briefing Card -->
+                    <div class="mb-4 p-3 rounded-lg bg-slate-950/90 border border-white/10 font-mono">
+                        <div class="flex items-center justify-between mb-1">
+                            <span id="sidebarTeamTag" class="text-xs font-extrabold uppercase text-red-400">RED BULL RACING</span>
+                            <span id="sidebarPaletteTag" class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300">RED / DARK BLUE CFD</span>
+                        </div>
+                        <p id="sidebarTeamDesc" class="text-[11px] text-slate-400 leading-relaxed">
+                            Ultra-efficient low-drag aero surface with high-efficiency DRS stall. Minimizes wake detachment for unmatched straight-line speed.
+                        </p>
+                    </div>
+
+                    <h2 class="font-display font-bold text-base uppercase tracking-wider text-white border-b border-white/10 pb-2 mb-4 flex items-center justify-between">
+                        <span>AERO BOUNDARY PARAMETERS</span>
+                        <span class="text-[10px] font-mono text-f1cyan font-normal">LIVE INPUT</span>
+                    </h2>
+
+                    <div class="space-y-4">
+                        <!-- Slider 1: Speed (km/h) -->
+                        <div>
+                            <div class="flex justify-between items-baseline mb-1">
+                                <label for="speedSlider" class="font-mono text-xs text-slate-300 uppercase font-semibold">
+                                    1. Tunnel Airspeed (v)
+                                </label>
+                                <div class="font-mono">
+                                    <span id="speedValueDisplay" class="text-lg font-extrabold text-f1cyan">305</span>
+                                    <span class="text-xs text-slate-400">km/h</span>
+                                </div>
+                            </div>
+                            <input id="speedSlider" type="range" min="80" max="370" value="305" step="1" class="w-full">
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                                <span>80 km/h (Hairpin)</span>
+                                <span>225 km/h</span>
+                                <span>370 km/h (Slipstream)</span>
+                            </div>
+                        </div>
+
+                        <!-- Slider 2: Baseline Downforce Level -->
+                        <div>
+                            <div class="flex justify-between items-baseline mb-1">
+                                <label for="downforceSlider" class="font-mono text-xs text-slate-300 uppercase font-semibold">
+                                    2. Wing &amp; Floor Load Setup
+                                </label>
+                                <div class="font-mono">
+                                    <span id="downforceValueDisplay" class="text-sm font-bold text-f1amber">62% (MEDIUM)</span>
+                                </div>
+                            </div>
+                            <input id="downforceSlider" type="range" min="10" max="100" value="62" step="1" class="w-full">
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                                <span>10% Monza Trim</span>
+                                <span>55% Balanced</span>
+                                <span>100% Max Wing</span>
+                            </div>
+                        </div>
+
+                        <!-- Slider 3: Ambient Air Density -->
+                        <div>
+                            <div class="flex justify-between items-baseline mb-1">
+                                <label for="densitySlider" class="font-mono text-xs text-slate-300 uppercase font-semibold">
+                                    3. Ambient Air Density (&rho;)
+                                </label>
+                                <div class="font-mono">
+                                    <span id="densityValueDisplay" class="text-lg font-extrabold text-f1green">1.225</span>
+                                    <span class="text-xs text-slate-400">kg/m³</span>
+                                </div>
+                            </div>
+                            <input id="densitySlider" type="range" min="0.900" max="1.350" value="1.225" step="0.005" class="w-full">
+                            <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                                <span>0.95 (Mexico 2240m)</span>
+                                <span>1.225 (ISA Sea Level)</span>
+                                <span>1.35 (Cold Dense)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CIRCUIT PRESET QUICK BUTTONS -->
+                <div class="pt-3 border-t border-white/10">
+                    <div class="text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-2">
+                        FIA CIRCUIT TELEMETRY PRESETS:
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 font-mono text-xs">
+                        <button data-preset="monza" class="preset-btn py-2 px-2 rounded bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 transition-all text-center">
+                            <span class="block font-bold text-f1cyan">MONZA</span>
+                            <span class="text-[10px] text-slate-400">Low Drag</span>
+                        </button>
+                        <button data-preset="monaco" class="preset-btn py-2 px-2 rounded bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 transition-all text-center">
+                            <span class="block font-bold text-f1amber">MONACO</span>
+                            <span class="text-[10px] text-slate-400">Max Load</span>
+                        </button>
+                        <button data-preset="mexico" class="preset-btn py-2 px-2 rounded bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 transition-all text-center">
+                            <span class="block font-bold text-f1green">MEXICO</span>
+                            <span class="text-[10px] text-slate-400">Thin Air</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- FOOTER BAR -->
+    <footer class="mt-4 flex flex-wrap justify-between items-center text-[11px] font-mono text-slate-500 px-2">
+        <div>KEYBOARD SHORTCUT: PRESS <kbd class="px-1.5 py-0.5 bg-slate-800 text-slate-200 rounded border border-white/10">SPACE</kbd> TO ACTIVATE / DEACTIVATE DRS</div>
+        <div>CONSTRUCTOR CFD MODEL // REAL-TIME C<sub>D</sub> &amp; C<sub>L</sub> INJECTION INTO NAVIER-STOKES STREAMLINE SOLVER</div>
+    </footer>
+
+    <!-- COMPLETE PHYSICS, CONSTRUCTOR PRESETS & CANVAS SIMULATION SCRIPT -->
+    <script>
+        (function () {
+            // =========================================================================
+            // 1. F1 TEAM CONSTRUCTOR PRESETS (AERO COEFFICIENTS + STREAMLINE PALETTES)
+            // =========================================================================
+            const TEAM_PRESETS = {
+                redbull: {
+                    id: 'redbull',
+                    name: 'Red Bull Racing',
+                    fullName: 'ORACLE RED BULL RACING',
+                    badgeText: 'RED BULL RACING // LOW-DRAG V-MAX CONCEPT',
+                    philosophy: 'HIGH TOP-SPEED PROFILE (LOW BASELINE DRAG Cd, STABLE VENTURI DOWNFORCE Cl)',
+                    description: 'Ultra-efficient low-drag aero surface with aggressive rear beam-wing stall. Minimizes wake detachment for unmatched straight-line speed.',
+                    traitTag: 'V-MAX KING',
+                    dragLabel: 'LOW-DRAG Cd SPEC',
+                    paletteName: 'RED / DARK BLUE',
+                    // Physics Multipliers passed into Navier-Stokes & Telemetry Loop
+                    cdMultiplier: 0.90,      // Very low baseline drag
+                    clMultiplier: 1.02,      // Stable, strong floor downforce
+                    drsEfficiency: 1.15,     // Famous triple-element DRS efficiency boost
+                    defaultSetup: 62,
+                    // Visual Streamline & Car Livery Palette
+                    streamColors: {
+                        laminar: { r: 35, g: 85, b: 255 },    // Electric Dark Blue
+                        venturi: { r: 255, g: 30, b: 15 },    // Bull Red
+                        wake:    { r: 255, g: 0, b: 68 }      // Crimson Wake
+                    },
+                    livery: {
+                        bodyTop: '#10172A',
+                        bodyMid: '#0A0E1A',
+                        sidepod: '#131C38',
+                        accentPrimary: '#FF1801',
+                        accentSecondary: '#FCD700',
+                        helmet: '#FF1801',
+                        wingFlapClosed: '#FF1801'
+                    }
+                },
+                mclaren: {
+                    id: 'mclaren',
+                    name: 'McLaren',
+                    fullName: 'McLAREN FORMULA 1 TEAM',
+                    badgeText: 'McLAREN // ELITE ALL-AROUND L/D BALANCE',
+                    philosophy: 'ELITE ALL-AROUND BALANCE (MEDIUM-LOW DRAG Cd, HIGH DOWNFORCE Cl)',
+                    description: 'Class-leading aerodynamic efficiency across both low-speed and high-speed corners with clean outwash and minimal pitch sensitivity.',
+                    traitTag: 'ELITE L/D BALANCE',
+                    dragLabel: 'MED-LOW DRAG SPEC',
+                    paletteName: 'PAPAYA ORANGE',
+                    cdMultiplier: 0.94,      // Medium-Low Drag
+                    clMultiplier: 1.09,      // High Downforce
+                    drsEfficiency: 1.06,
+                    defaultSetup: 68,
+                    streamColors: {
+                        laminar: { r: 255, g: 128, b: 0 },    // Classic Papaya Orange
+                        venturi: { r: 255, g: 195, b: 30 },   // Bright Amber-Papaya Jet
+                        wake:    { r: 255, g: 55, b: 25 }     // Deep Burnt Orange Wake
+                    },
+                    livery: {
+                        bodyTop: '#FF8000',
+                        bodyMid: '#181B20',
+                        sidepod: '#14171D',
+                        accentPrimary: '#FF8000',
+                        accentSecondary: '#00C8FF',
+                        helmet: '#FF8000',
+                        wingFlapClosed: '#FF8000'
+                    }
+                },
+                ferrari: {
+                    id: 'ferrari',
+                    name: 'Ferrari',
+                    fullName: 'SCUDERIA FERRARI HP',
+                    badgeText: 'SCUDERIA FERRARI // SUPREME CORNERING LOAD',
+                    philosophy: 'SUPREME CORNERING LOAD (MAX DOWNFORCE Cl, SLIGHTLY HIGHER BASELINE DRAG Cd)',
+                    description: 'Aggressive high-camber wing profiles and deep in-washing sidepod undercut generate immense mechanical & aero grip in tight sections.',
+                    traitTag: 'APEX LOAD MONSTER',
+                    dragLabel: 'HIGH-LOAD Cd SPEC',
+                    paletteName: 'ROSSO CORSA RED',
+                    cdMultiplier: 1.04,      // Slightly higher baseline drag
+                    clMultiplier: 1.15,      // Supreme cornering downforce Cl
+                    drsEfficiency: 1.02,
+                    defaultSetup: 78,
+                    streamColors: {
+                        laminar: { r: 230, g: 15, b: 35 },    // Rosso Corsa Red
+                        venturi: { r: 255, g: 95, b: 70 },    // Bright Fiorano Scarlet
+                        wake:    { r: 255, g: 210, b: 0 }     // Modena Yellow-Orange Vortex
+                    },
+                    livery: {
+                        bodyTop: '#D40000',
+                        bodyMid: '#7A0000',
+                        sidepod: '#9E0000',
+                        accentPrimary: '#FFF200',
+                        accentSecondary: '#FFFFFF',
+                        helmet: '#FFF200',
+                        wingFlapClosed: '#D40000'
+                    }
+                },
+                mercedes: {
+                    id: 'mercedes',
+                    name: 'Mercedes',
+                    fullName: 'MERCEDES-AMG PETRONAS F1',
+                    badgeText: 'MERCEDES-AMG // GROUND-EFFECT FLOOR SPECIALIST',
+                    philosophy: 'STABLE GROUND-EFFECT HANDLING (MEDIUM DRAG Cd, HIGH DOWNFORCE Cl)',
+                    description: 'Strong Venturi underfloor suction paired with neutral aero balance. Excels on smooth, high-speed sweeps with stable rear-end platform.',
+                    traitTag: 'VENTURI STABILITY',
+                    dragLabel: 'MEDIUM DRAG SPEC',
+                    paletteName: 'SILVER / PETRONAS TEAL',
+                    cdMultiplier: 0.99,      // Medium Drag
+                    clMultiplier: 1.08,      // High Downforce
+                    drsEfficiency: 1.00,
+                    defaultSetup: 70,
+                    streamColors: {
+                        laminar: { r: 200, g: 218, b: 230 },  // Silver Arrow Metallic Stream
+                        venturi: { r: 0, g: 245, b: 208 },    // Petronas Teal Suction Jet
+                        wake:    { r: 0, g: 165, b: 255 }     // Deep Cyan-Blue Wake
+                    },
+                    livery: {
+                        bodyTop: '#94A3B8',
+                        bodyMid: '#1E242B',
+                        sidepod: '#11151C',
+                        accentPrimary: '#00F5D0',
+                        accentSecondary: '#E2E8F0',
+                        helmet: '#00F5D0',
+                        wingFlapClosed: '#00F5D0'
+                    }
+                },
+                alpine: {
+                    id: 'alpine',
+                    name: 'Alpine F1 Team',
+                    fullName: 'BWT ALPINE F1 TEAM',
+                    badgeText: 'ALPINE F1 TEAM // HIGH-DRAG OUTLIER PROFILE',
+                    philosophy: 'HIGH-DRAG OUTLIER PROFILE (HIGH BASELINE DRAG Cd, LOWER BASELINE DOWNFORCE Cl)',
+                    description: 'Higher frontal pressure drag and steeper wake detachment require lower wing angles or early DRS deployment to compensate on straights.',
+                    traitTag: 'HIGH-DRAG OUTLIER',
+                    dragLabel: 'PENALTY DRAG SPEC',
+                    paletteName: 'BRIGHT PINK / BLUE',
+                    cdMultiplier: 1.13,      // High-drag outlier profile
+                    clMultiplier: 0.92,      // Slightly lower baseline downforce
+                    drsEfficiency: 0.96,
+                    defaultSetup: 58,
+                    streamColors: {
+                        laminar: { r: 0, g: 145, b: 255 },    // Alpine Racing Blue
+                        venturi: { r: 255, g: 70, b: 190 },   // BWT Bright Pink
+                        wake:    { r: 255, g: 20, b: 147 }    // Hot Magenta Wake Turbulence
+                    },
+                    livery: {
+                        bodyTop: '#0055A4',
+                        bodyMid: '#0F172A',
+                        sidepod: '#1E293B',
+                        accentPrimary: '#FF46BE',
+                        accentSecondary: '#0090FF',
+                        helmet: '#FF46BE',
+                        wingFlapClosed: '#FF46BE'
+                    }
+                }
+            };
+
+            // =========================================================================
+            // 2. SIMULATION STATE & CONSTANTS
+            // =========================================================================
+            const state = {
+                currentTeam: 'redbull',
+                speedKmh: 305,              // km/h
+                downforceSetup: 62,         // 10 to 100 (%)
+                airDensity: 1.225,          // kg/m^3
+                drsActive: false,           // boolean
+                drsAnimation: 0.0,          // 0.0 (closed) to 1.0 (fully open)
+                visualMode: 'streamlines',  // 'streamlines' | 'particles'
+                showLoadVectors: true,
+                frontalArea: 1.50,          // m^2 (typical F1 frontal area)
+                enginePowerWatts: 745700,   // ~1000 HP (ICE + MGU-K)
+                drivetrainEfficiency: 0.92,
+                carMassKg: 798,             // FIA minimum weight (kg)
+
+                // Calculated live telemetry
+                cd: 0.803,
+                cl: 3.001,
+                dragForceN: 0,
+                downforceN: 0,
+                dynamicPressurePa: 0,
+                projectedTopSpeedKmh: 0,
+                baselineTopSpeedKmh: 0
+            };
+
+            // DOM Elements
+            const canvas = document.getElementById('windTunnelCanvas');
+            const ctx = canvas.getContext('2d');
+
+            const teamSelect = document.getElementById('teamSelect');
+            const brandStripePrimary = document.getElementById('brandStripePrimary');
+            const brandStripeSecondary = document.getElementById('brandStripeSecondary');
+            const teamChassisBadge = document.getElementById('teamChassisBadge');
+            const teamAeroPhilosophy = document.getElementById('teamAeroPhilosophy');
+
+            const hudActiveTeamName = document.getElementById('hudActiveTeamName');
+            const hudPaletteLabel = document.getElementById('hudPaletteLabel');
+            const legendDotLaminar = document.getElementById('legendDotLaminar');
+            const legendDotVenturi = document.getElementById('legendDotVenturi');
+            const legendDotWake = document.getElementById('legendDotWake');
+            const hudTeamFactors = document.getElementById('hudTeamFactors');
+
+            const sidebarTeamTag = document.getElementById('sidebarTeamTag');
+            const sidebarPaletteTag = document.getElementById('sidebarPaletteTag');
+            const sidebarTeamDesc = document.getElementById('sidebarTeamDesc');
+
+            const speedSlider = document.getElementById('speedSlider');
+            const downforceSlider = document.getElementById('downforceSlider');
+            const densitySlider = document.getElementById('densitySlider');
+            const drsToggleBtn = document.getElementById('drsToggleBtn');
+
+            const speedValueDisplay = document.getElementById('speedValueDisplay');
+            const downforceValueDisplay = document.getElementById('downforceValueDisplay');
+            const densityValueDisplay = document.getElementById('densityValueDisplay');
+
+            const hudSpeedKmh = document.getElementById('hudSpeedKmh');
+            const hudSpeedMs = document.getElementById('hudSpeedMs');
+            const hudDynamicPressure = document.getElementById('hudDynamicPressure');
+            const hudLdRatio = document.getElementById('hudLdRatio');
+            const hudWakeStatus = document.getElementById('hudWakeStatus');
+
+            const telemetryDrag = document.getElementById('telemetryDrag');
+            const telemetryCd = document.getElementById('telemetryCd');
+            const telemetryDragPower = document.getElementById('telemetryDragPower');
+            const dragDeltaBadge = document.getElementById('dragDeltaBadge');
+
+            const telemetryDownforce = document.getElementById('telemetryDownforce');
+            const telemetryCl = document.getElementById('telemetryCl');
+            const telemetryDownforceKg = document.getElementById('telemetryDownforceKg');
+            const downforceG = document.getElementById('downforceG');
+
+            const telemetryTopSpeed = document.getElementById('telemetryTopSpeed');
+            const telemetryTopSpeedMph = document.getElementById('telemetryTopSpeedMph');
+            const telemetryTeamTrait = document.getElementById('telemetryTeamTrait');
+            const vmaxGainBadge = document.getElementById('vmaxGainBadge');
+
+            const drsIndicatorDot = document.getElementById('drsIndicatorDot');
+            const drsStateTitle = document.getElementById('drsStateTitle');
+            const drsStateSubtitle = document.getElementById('drsStateSubtitle');
+            const drsFlapBar = document.getElementById('drsFlapBar');
+            const drsAngleReadout = document.getElementById('drsAngleReadout');
+            const drsDragReductionReadout = document.getElementById('drsDragReductionReadout');
+
+            const modeStreamlinesBtn = document.getElementById('modeStreamlines');
+            const modeParticlesBtn = document.getElementById('modeParticles');
+            const toggleForceVectorsBtn = document.getElementById('toggleForceVectors');
+            const fpsCounter = document.getElementById('fpsCounter');
+
+            function rgbObjToCss(c, alpha = 1) {
+                return `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
+            }
+
+            // =========================================================================
+            // 3. PHYSICS & TELEMETRY MATH ENGINE (WITH TEAM C_d & C_l COEFFICIENTS)
+            // =========================================================================
+            function calculateAerodynamics() {
+                const team = TEAM_PRESETS[state.currentTeam];
+                const vMs = state.speedKmh / 3.6;
+                const setupNorm = state.downforceSetup / 100; // 0.10 to 1.00
+
+                // Raw wing/floor baseline before team aero philosophy multipliers
+                const rawCd = 0.65 + (setupNorm * 0.42);
+                const rawCl = 1.85 + (setupNorm * 1.75);
+
+                // Apply Constructor-specific Cd and Cl multipliers
+                const baseCd = rawCd * team.cdMultiplier;
+                const baseCl = rawCl * team.clMultiplier;
+
+                // DRS Effect depends smoothly on animated flap position (0.0 -> 1.0) and team DRS efficiency
+                const drsDragDropFactor = Math.min(0.35, (0.20 + 0.08 * setupNorm) * team.drsEfficiency * state.drsAnimation);
+                const drsLiftDropFactor = (0.14 + 0.05 * setupNorm) * state.drsAnimation;
+
+                state.cd = baseCd * (1 - drsDragDropFactor);
+                state.cl = baseCl * (1 - drsLiftDropFactor);
+
+                // Dynamic Pressure q = 0.5 * rho * v^2
+                state.dynamicPressurePa = 0.5 * state.airDensity * vMs * vMs;
+
+                // Aerodynamic Forces: F = q * C * A
+                state.dragForceN = state.dynamicPressurePa * state.cd * state.frontalArea;
+                state.downforceN = state.dynamicPressurePa * state.cl * state.frontalArea;
+
+                // Power consumed by aerodynamic drag: P_drag = F_D * v (in kW)
+                const dragPowerKw = (state.dragForceN * vMs) / 1000;
+
+                // Projected Top Speed calculation where Available Tractive Power = Aero Drag + Mechanical Rolling Resistance
+                const effectivePower = state.enginePowerWatts * state.drivetrainEfficiency;
+                state.baselineTopSpeedKmh = solveTerminalVelocityKmh(effectivePower, state.airDensity, baseCd, baseCl, state.frontalArea);
+                state.projectedTopSpeedKmh = solveTerminalVelocityKmh(effectivePower, state.airDensity, state.cd, state.cl, state.frontalArea);
+
+                // Update UI DOM Elements
+                const setupLabel = setupNorm < 0.35 ? 'LOW DRAG' : setupNorm < 0.72 ? 'BALANCED' : 'MAX LOAD';
+                speedValueDisplay.textContent = state.speedKmh;
+                downforceValueDisplay.textContent = `${state.downforceSetup}% (${setupLabel})`;
+                densityValueDisplay.textContent = state.airDensity.toFixed(3);
+
+                hudSpeedKmh.textContent = state.speedKmh;
+                hudSpeedMs.textContent = `${vMs.toFixed(1)} m/s`;
+                hudDynamicPressure.textContent = `${Math.round(state.dynamicPressurePa).toLocaleString()} Pa`;
+                hudLdRatio.textContent = (state.cl / state.cd).toFixed(2);
+                hudTeamFactors.textContent = `Cd x${team.cdMultiplier.toFixed(2)} / Cl x${team.clMultiplier.toFixed(2)}`;
+
+                telemetryDrag.textContent = Math.round(state.dragForceN).toLocaleString();
+                telemetryCd.textContent = state.cd.toFixed(3);
+                telemetryDragPower.textContent = `${Math.round(dragPowerKw)} kW`;
+
+                const dragReductionPct = Math.round(drsDragDropFactor * 100);
+                if (state.drsAnimation > 0.05) {
+                    dragDeltaBadge.textContent = `-${dragReductionPct}% DRS SHED`;
+                    dragDeltaBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-f1green/15 text-f1green border border-f1green/40 font-semibold';
+                } else {
+                    dragDeltaBadge.textContent = team.dragLabel;
+                    dragDeltaBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-f1red/15 text-f1red border border-f1red/30 font-semibold';
+                }
+
+                telemetryDownforce.textContent = Math.round(state.downforceN).toLocaleString();
+                telemetryCl.textContent = state.cl.toFixed(3);
+                const downforceKgf = state.downforceN / 9.81;
+                telemetryDownforceKg.textContent = `${Math.round(downforceKgf).toLocaleString()} kgf`;
+                const aeroGs = state.downforceN / (state.carMassKg * 9.81);
+                downforceG.textContent = `${aeroGs.toFixed(2)} G LOAD`;
+
+                telemetryTopSpeed.textContent = state.projectedTopSpeedKmh.toFixed(1);
+                telemetryTopSpeedMph.textContent = `${(state.projectedTopSpeedKmh * 0.621371).toFixed(1)} mph`;
+                telemetryTeamTrait.textContent = team.traitTag;
+
+                const speedGain = state.projectedTopSpeedKmh - state.baselineTopSpeedKmh;
+                if (speedGain > 0.2) {
+                    vmaxGainBadge.textContent = `+${speedGain.toFixed(1)} km/h DRS`;
+                    vmaxGainBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-f1green/15 text-f1green border border-f1green/40 font-semibold';
+                } else {
+                    vmaxGainBadge.textContent = '+0.0 km/h';
+                    vmaxGainBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/10 font-semibold';
+                }
+
+                // Update Flap Angle Readout (Closed = 36 deg, Open = 6 deg)
+                const flapAngleDeg = 36 - (state.drsAnimation * 30);
+                drsAngleReadout.textContent = `${flapAngleDeg.toFixed(1)}°`;
+                drsDragReductionReadout.textContent = `-${dragReductionPct}%`;
+                drsFlapBar.style.width = `${8 + state.drsAnimation * 92}%`;
+            }
+
+            // Iterative solver for terminal velocity balancing aero drag + tire rolling resistance
+            function solveTerminalVelocityKmh(powerWatts, rho, cd, cl, area) {
+                let v = 90; // initial guess m/s
+                const crr = 0.016; // F1 slick rolling resistance coefficient
+                for (let i = 0; i < 12; i++) {
+                    const q = 0.5 * rho * v * v;
+                    const fDrag = q * cd * area;
+                    const fDown = q * cl * area;
+                    const fRoll = crr * (state.carMassKg * 9.81 + fDown);
+                    const totalPowerAtV = (fDrag + fRoll) * v;
+                    const dPowerDv = 1.5 * rho * cd * area * v * v + crr * state.carMassKg * 9.81 + 1.5 * crr * rho * cl * area * v * v;
+                    v = v - (totalPowerAtV - powerWatts) / dPowerDv;
+                }
+                return v * 3.6;
+            }
+
+            // =========================================================================
+            // 4. TEAM SELECTION & DRS UI HANDLERS
+            // =========================================================================
+            function applyTeamPreset(teamKey) {
+                if (!TEAM_PRESETS[teamKey]) return;
+                state.currentTeam = teamKey;
+                const team = TEAM_PRESETS[teamKey];
+
+                // Update baseline setup slider to match team's natural aero trim
+                state.downforceSetup = team.defaultSetup;
+                downforceSlider.value = team.defaultSetup;
+
+                // Update Header Badges & Livery Stripes
+                brandStripePrimary.style.backgroundColor = team.livery.accentPrimary;
+                brandStripeSecondary.style.backgroundColor = team.livery.accentSecondary;
+                teamChassisBadge.textContent = team.badgeText;
+                teamChassisBadge.style.borderColor = team.livery.accentPrimary;
+                teamChassisBadge.style.color = '#ffffff';
+                teamChassisBadge.style.backgroundColor = 'rgba(255, 255, 255, 0.07)';
+                teamAeroPhilosophy.textContent = team.philosophy;
+
+                // Update HUD & Legend Dots Instantly
+                hudActiveTeamName.textContent = team.fullName;
+                hudActiveTeamName.style.color = team.livery.accentPrimary;
+                hudPaletteLabel.textContent = team.paletteName;
+                hudPaletteLabel.style.color = team.livery.accentPrimary;
+
+                legendDotLaminar.style.backgroundColor = rgbObjToCss(team.streamColors.laminar, 1);
+                legendDotVenturi.style.backgroundColor = rgbObjToCss(team.streamColors.venturi, 1);
+                legendDotWake.style.backgroundColor = rgbObjToCss(team.streamColors.wake, 1);
+
+                // Update Sidebar Constructor Briefing
+                sidebarTeamTag.textContent = team.name;
+                sidebarTeamTag.style.color = team.livery.accentPrimary;
+                sidebarPaletteTag.textContent = `${team.paletteName} CFD`;
+                sidebarTeamDesc.textContent = team.description;
+
+                // Force all existing particles to immediately adopt the new team's palette & aero metrics
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].teamId = teamKey;
+                }
+
+                calculateAerodynamics();
+            }
+
+            function toggleDRS(forceState) {
+                state.drsActive = typeof forceState === 'boolean' ? forceState : !state.drsActive;
+
+                if (state.drsActive) {
+                    drsToggleBtn.classList.remove('drs-glow-inactive');
+                    drsToggleBtn.classList.add('drs-glow-active');
+                    drsIndicatorDot.className = 'w-4 h-4 rounded-full bg-f1green shadow-[0_0_15px_#00FF66] transition-all';
+                    drsStateTitle.textContent = 'DRS ACTIVE // OPEN';
+                    drsStateTitle.className = 'font-display font-extrabold text-2xl sm:text-3xl tracking-wider text-f1green';
+                    drsStateSubtitle.textContent = 'REAR WING STALLED // LOW-DRAG LAMINAR WAKE';
+                    drsStateSubtitle.className = 'font-mono text-xs uppercase tracking-widest text-emerald-300';
+                    drsFlapBar.className = 'h-full bg-f1green transition-all duration-75';
+
+                    hudWakeStatus.textContent = 'DRS OPEN: SLOT-GAP BLEEDING PRESSURE // ATTACHED LOW-DRAG WAKE';
+                    hudWakeStatus.className = 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded uppercase font-semibold tracking-wider';
+                } else {
+                    drsToggleBtn.classList.remove('drs-glow-active');
+                    drsToggleBtn.classList.add('drs-glow-inactive');
+                    drsIndicatorDot.className = 'w-4 h-4 rounded-full bg-f1red shadow-[0_0_12px_#E10600] transition-all';
+                    drsStateTitle.textContent = 'DRS CLOSED';
+                    drsStateTitle.className = 'font-display font-extrabold text-2xl sm:text-3xl tracking-wider text-white';
+                    drsStateSubtitle.textContent = 'HIGH DOWNFORCE CORNERING MODE // CLICK TO OPEN FLAP';
+                    drsStateSubtitle.className = 'font-mono text-xs uppercase tracking-widest text-red-400';
+                    drsFlapBar.className = 'h-full bg-f1red transition-all duration-75';
+
+                    hudWakeStatus.textContent = 'REAR WING: HIGH-ANGLE EXTRACTION // LARGE PRESSURE WAKE';
+                    hudWakeStatus.className = 'bg-red-950/80 border border-red-500/40 text-red-300 px-3 py-1.5 rounded uppercase font-semibold tracking-wider';
+                }
+            }
+
+            // =========================================================================
+            // 5. AIRFLOW PARTICLE & VECTOR STREAMLINE ENGINE (NAVIER-STOKES APPROX)
+            // =========================================================================
+            const PARTICLE_COUNT = 340;
+            const particles = [];
+
+            // Car coordinate reference in normalized car space:
+            // Nose tip at x = 0.0, Rear wing trailing edge at x = 1.0
+            function getChassisEnvelope(normX, setupNorm, drsOpenNorm) {
+                if (normX < 0 || normX > 1.05) return { topY: 0, bottomY: 0, onCar: false };
+
+                let topY = 0;
+                if (normX < 0.16) {
+                    topY = 0.05 + (normX / 0.16) * 0.12;
+                } else if (normX < 0.35) {
+                    topY = 0.17 + ((normX - 0.16) / 0.19) * 0.12;
+                } else if (normX < 0.56) {
+                    const t = (normX - 0.35) / 0.21;
+                    topY = 0.29 + Math.sin(t * Math.PI * 0.65) * 0.11;
+                } else if (normX < 0.87) {
+                    const t = (normX - 0.56) / 0.31;
+                    topY = 0.38 - t * 0.15;
+                } else {
+                    const wingTipHeight = 0.39 + setupNorm * 0.04 - drsOpenNorm * 0.065;
+                    topY = wingTipHeight;
+                }
+
+                let bottomY = 0.032;
+                if (normX > 0.22 && normX < 0.75) {
+                    bottomY = 0.016;
+                } else if (normX >= 0.75) {
+                    bottomY = 0.016 + ((normX - 0.75) / 0.25) * 0.085;
+                }
+
+                return { topY, bottomY, onCar: true };
+            }
+
+            class FlowParticle {
+                constructor(randomX = true) {
+                    this.reset(randomX);
+                }
+
+                reset(randomX = false) {
+                    this.x = randomX ? Math.random() * 1.45 - 0.25 : -0.22 - Math.random() * 0.08;
+                    const r = Math.random();
+                    this.baseY = r < 0.23
+                        ? 0.008 + Math.random() * 0.065 // Underfloor & front wing stream
+                        : 0.07 + Math.pow(Math.random(), 1.25) * 0.62; // Overbody & upper stream
+                    this.y = this.baseY;
+                    this.vx = 1.0;
+                    this.vy = 0.0;
+                    this.vorticity = 0.0;
+                    this.phase = Math.random() * Math.PI * 2;
+                    this.freq = 7 + Math.random() * 9;
+                    this.history = [];
+                    this.streamClass = this.baseY < 0.068 ? 'underfloor' : 'overbody';
+                    this.teamId = state.currentTeam;
+                }
+
+                update(dt, speedNorm, setupNorm, drsOpenNorm, liveCd, liveCl) {
+                    const stepX = (0.35 + speedNorm * 0.95) * dt;
+                    this.x += stepX * this.vx;
+
+                    // Normalized live Cl and Cd influence on physical flow deflection & wake turbulence
+                    const clFactor = liveCl / 3.0; // ~0.65 to 1.35
+                    const cdFactor = liveCd / 0.88; // ~0.70 to 1.30
+
+                    const env = getChassisEnvelope(this.x, setupNorm, drsOpenNorm);
+
+                    if (this.streamClass === 'underfloor') {
+                        // Venturi underbody channel + Rear Diffuser upwash driven by live Cl
+                        if (this.x >= -0.05 && this.x <= 0.85) {
+                            this.vx = 1.28 + (clFactor * 0.28);
+                            const targetY = Math.min(this.baseY * 0.45, 0.024);
+                            this.y += (targetY - this.y) * 0.18;
+                            this.vorticity = 0.05;
+                        } else if (this.x > 0.85) {
+                            this.vx = 1.05;
+                            const wakeX = this.x - 0.85;
+                            const diffuserUpwash = (0.14 + setupNorm * 0.12) * clFactor * (1 - drsOpenNorm * 0.45);
+                            this.y += diffuserUpwash * stepX * 1.3;
+                            const turbAmp = (1 - drsOpenNorm * 0.72) * (0.014 + setupNorm * 0.022) * cdFactor * Math.min(1, wakeX * 2.5);
+                            this.y += Math.sin(this.x * 24 - performance.now() * 0.012 + this.phase) * turbAmp;
+                            this.vorticity = (1 - drsOpenNorm * 0.65) * 0.68 * cdFactor;
+                        } else {
+                            this.vx = 1.0;
+                        }
+                    } else {
+                        // Overbody flow: Front Wing -> Halo -> Engine Cover -> Rear Wing -> Wake
+                        if (this.x > -0.10 && this.x <= 0.98) {
+                            const influence = Math.exp(-Math.max(0, this.baseY - env.topY) * 5.2);
+                            const desiredY = this.baseY + env.topY * influence * 0.92;
+
+                            // Extra upwash directly approaching rear wing elements (scaled by live Cl)
+                            let wingKick = 0;
+                            if (this.x > 0.80 && this.x <= 0.98) {
+                                const wProgress = (this.x - 0.80) / 0.18;
+                                const wingLiftStrength = (0.04 + setupNorm * 0.065) * clFactor * (1 - drsOpenNorm * 0.72);
+                                wingKick = wProgress * wingLiftStrength * Math.exp(-Math.abs(this.baseY - 0.28) * 5);
+                            }
+
+                            this.y += ((desiredY + wingKick) - this.y) * 0.22;
+                            this.vx = 1.0 + influence * 0.26 * clFactor;
+                            this.vorticity = influence * 0.16;
+                        } else if (this.x > 0.98) {
+                            // BEHIND THE REAR WING (Aerodynamic Wake Zone governed by live Cd & Cl)
+                            const wakeDist = this.x - 0.98;
+                            const inWingWake = Math.exp(-Math.pow((this.y - 0.33) / 0.19, 2));
+
+                            // Higher Cd teams (like Alpine/Ferrari) produce broader vortex shedding when DRS is closed
+                            const closedTurbIntensity = (0.42 + setupNorm * 0.52) * cdFactor * (1 - drsOpenNorm * 0.84);
+                            const localTurbulence = inWingWake * closedTurbIntensity;
+
+                            // Upwash angle behind rear wing proportional to Cl
+                            const upwashSlope = inWingWake * (0.12 + setupNorm * 0.16) * clFactor * (1 - drsOpenNorm * 0.80) * Math.exp(-wakeDist * 2.2);
+                            // Swirling vortex oscillation proportional to Cd
+                            const swirlWave = Math.sin(wakeDist * this.freq * 3.2 - performance.now() * 0.016 + this.phase)
+                                            * localTurbulence * 0.026 * Math.min(1.25, wakeDist * 3.5);
+
+                            this.y += upwashSlope * stepX + swirlWave;
+                            this.vx = Math.max(0.50, 1.0 - localTurbulence * 0.38);
+                            this.vorticity = Math.min(1.0, localTurbulence * 1.35);
+                        } else {
+                            this.vx = 1.0;
+                            this.vorticity = 0;
+                        }
+                    }
+
+                    this.history.push({ x: this.x, y: this.y, vort: this.vorticity, vx: this.vx });
+                    const maxTrail = state.visualMode === 'streamlines' ? 14 : 5;
+                    if (this.history.length > maxTrail) {
+                        this.history.shift();
+                    }
+
+                    if (this.x > 1.32 || this.y > 0.95 || this.y < 0.002) {
+                        this.reset(false);
+                    }
+                }
+            }
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                particles.push(new FlowParticle(true));
+            }
+
+            // =========================================================================
+            // 6. CANVAS RENDERING: WIND TUNNEL, TEAM LIVERY F1 CHASSIS & STREAMLINES
+            // =========================================================================
+            let wheelRotationAngle = 0;
+
+            function resizeCanvas() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            function drawWindTunnelBackground(w, h, groundY) {
+                const team = TEAM_PRESETS[state.currentTeam];
+                const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+                bgGrad.addColorStop(0, '#06080d');
+                bgGrad.addColorStop(0.75, '#0b1019');
+                bgGrad.addColorStop(1, '#07090e');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(0, 0, w, h);
+
+                // Subtle CFD Coordinate Grid tinted with active team's laminar color
+                ctx.strokeStyle = rgbObjToCss(team.streamColors.laminar, 0.055);
+                ctx.lineWidth = 1;
+                const gridSize = 42;
+                ctx.beginPath();
+                for (let x = 0; x < w; x += gridSize) {
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, groundY);
+                }
+                for (let y = groundY; y > 0; y -= gridSize) {
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(w, y);
+                }
+                ctx.stroke();
+
+                // Moving Rolling-Road Belt under the car
+                ctx.fillStyle = '#090b10';
+                ctx.fillRect(0, groundY, w, h - groundY);
+
+                // Illuminated wind tunnel floor laser line in team accent color
+                ctx.strokeStyle = team.livery.accentPrimary;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, groundY);
+                ctx.lineTo(w, groundY);
+                ctx.stroke();
+
+                // Animated road ticks showing rolling road speed
+                const beltOffset = (performance.now() * (state.speedKmh / 3.6) * 0.35) % 60;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+                ctx.lineWidth = 2;
+                for (let x = w + 60 - beltOffset; x > -60; x -= 60) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, groundY + 2);
+                    ctx.lineTo(x - 18, groundY + 14);
+                    ctx.stroke();
+                }
+            }
+
+            function drawAirflowParticles(carStartX, carLength, groundY, carHeightScale) {
+                const palette = TEAM_PRESETS[state.currentTeam].streamColors;
+
+                for (let i = 0; i < particles.length; i++) {
+                    const p = particles[i];
+                    if (p.history.length < 2) continue;
+
+                    const head = p.history[p.history.length - 1];
+                    const screenX = carStartX + head.x * carLength;
+                    const screenY = groundY - head.y * carHeightScale;
+
+                    // Dynamically color each particle/streamline using the active F1 Team's palette:
+                    // 1. High vorticity wake -> Team Wake Color
+                    // 2. High speed Venturi / Overbody jet -> Team Venturi Color
+                    // 3. Free-stream laminar flow -> Team Laminar Color
+                    let strokeColor;
+                    if (head.vort > 0.30) {
+                        const t = Math.min(1, (head.vort - 0.30) / 0.55);
+                        const r = Math.round(palette.laminar.r + t * (palette.wake.r - palette.laminar.r));
+                        const g = Math.round(palette.laminar.g + t * (palette.wake.g - palette.laminar.g));
+                        const b = Math.round(palette.laminar.b + t * (palette.wake.b - palette.laminar.b));
+                        strokeColor = `rgba(${r}, ${g}, ${b}, 0.85)`;
+                    } else if (head.vx > 1.18) {
+                        strokeColor = rgbObjToCss(palette.venturi, 0.90);
+                    } else {
+                        strokeColor = rgbObjToCss(palette.laminar, 0.72);
+                    }
+
+                    if (state.visualMode === 'streamlines') {
+                        ctx.beginPath();
+                        for (let j = 0; j < p.history.length; j++) {
+                            const pt = p.history[j];
+                            const px = carStartX + pt.x * carLength;
+                            const py = groundY - pt.y * carHeightScale;
+                            if (j === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
+                        ctx.strokeStyle = strokeColor;
+                        ctx.lineWidth = head.vort > 0.4 ? 2.3 : 1.7;
+                        ctx.stroke();
+
+                        // Leading vector tip
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(screenX - 1, screenY - 1, 2.2, 2.2);
+                    } else {
+                        // Smoke Particle Mode
+                        const radius = head.vort > 0.35 ? 3.5 + head.vort * 4.5 : 2.5;
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = strokeColor;
+                        ctx.fill();
+                    }
+                }
+            }
+
+            function drawF1CarSideProfile(carStartX, carLength, groundY) {
+                const team = TEAM_PRESETS[state.currentTeam];
+                const liv = team.livery;
+
+                ctx.save();
+                ctx.translate(carStartX, groundY);
+                const s = carLength / 560;
+                ctx.scale(s, s);
+
+                // Underfloor Venturi Suction Glow (tinted with team Venturi palette color)
+                const suctionAlpha = Math.min(0.70, (state.downforceN / 26000) * 0.70);
+                const floorGlow = ctx.createLinearGradient(110, -18, 430, 0);
+                floorGlow.addColorStop(0, rgbObjToCss(team.streamColors.venturi, 0));
+                floorGlow.addColorStop(0.45, rgbObjToCss(team.streamColors.venturi, suctionAlpha));
+                floorGlow.addColorStop(0.85, rgbObjToCss(team.streamColors.laminar, suctionAlpha * 0.8));
+                floorGlow.addColorStop(1, rgbObjToCss(team.streamColors.laminar, 0));
+                ctx.fillStyle = floorGlow;
+                ctx.fillRect(90, -20, 370, 20);
+
+                // 1. REAR WING ENDPLATE (Background Shadow Layer)
+                ctx.fillStyle = '#12161f';
+                ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(486, -42);
+                ctx.lineTo(506, -135);
+                ctx.lineTo(548, -135);
+                ctx.lineTo(536, -36);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 2. UNDERFLOOR & REAR DIFFUSER RAMP
+                ctx.fillStyle = '#0c0e14';
+                ctx.strokeStyle = '#475569';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(45, -10);
+                ctx.lineTo(435, -7);
+                ctx.lineTo(525, -28);
+                ctx.lineTo(520, -38);
+                ctx.lineTo(45, -22);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 3. MAIN CARBON CHASSIS, MONOCOQUE, AIRBOX & ENGINE COVER (Dynamic Team Livery)
+                const bodyGrad = ctx.createLinearGradient(0, -130, 500, -15);
+                bodyGrad.addColorStop(0, liv.bodyTop);
+                bodyGrad.addColorStop(0.55, liv.bodyMid);
+                bodyGrad.addColorStop(1, '#090b10');
+
+                ctx.fillStyle = bodyGrad;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+                ctx.lineWidth = 1.6;
+                ctx.beginPath();
+                ctx.moveTo(8, -16);
+                ctx.quadraticCurveTo(55, -36, 115, -52);
+                ctx.lineTo(185, -62);
+                ctx.lineTo(212, -64);
+                ctx.lineTo(255, -64);
+                ctx.lineTo(276, -118);
+                ctx.quadraticCurveTo(320, -120, 355, -108);
+                ctx.lineTo(475, -52);
+                ctx.lineTo(498, -36);
+                ctx.lineTo(435, -12);
+                ctx.lineTo(80, -14);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Sharkfin Aero Panel Accent in Team Primary Color
+                ctx.fillStyle = liv.accentPrimary;
+                ctx.beginPath();
+                ctx.moveTo(335, -112);
+                ctx.lineTo(465, -98);
+                ctx.lineTo(460, -60);
+                ctx.lineTo(355, -108);
+                ctx.closePath();
+                ctx.fill();
+
+                // 4. DRIVER HELMET & TITANIUM HALO
+                ctx.fillStyle = liv.helmet;
+                ctx.beginPath();
+                ctx.arc(240, -76, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#07090e';
+                ctx.fillRect(227, -81, 12, 6);
+
+                // Halo Structure
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 5.5;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(192, -63);
+                ctx.quadraticCurveTo(228, -98, 270, -90);
+                ctx.stroke();
+
+                // 5. SCULPTED GROUND-EFFECT SIDEPOD & TEAM LIVERY FLASH
+                ctx.fillStyle = liv.sidepod;
+                ctx.strokeStyle = liv.accentSecondary;
+                ctx.lineWidth = 1.6;
+                ctx.beginPath();
+                ctx.moveTo(195, -58);
+                ctx.lineTo(212, -22);
+                ctx.lineTo(445, -14);
+                ctx.quadraticCurveTo(375, -56, 195, -58);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Team Livery Racing Stripe
+                ctx.strokeStyle = liv.accentPrimary;
+                ctx.lineWidth = 3.8;
+                ctx.beginPath();
+                ctx.moveTo(45, -28);
+                ctx.lineTo(190, -52);
+                ctx.lineTo(430, -24);
+                ctx.stroke();
+
+                // Secondary Team Accent Pin-Stripe
+                ctx.strokeStyle = liv.accentSecondary;
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(65, -24);
+                ctx.lineTo(195, -46);
+                ctx.lineTo(425, -19);
+                ctx.stroke();
+
+                // 6. MULTI-ELEMENT FRONT WING ASSEMBLY
+                ctx.fillStyle = '#151922';
+                ctx.strokeStyle = liv.accentPrimary;
+                ctx.lineWidth = 1.5;
+                for (let f = 0; f < 3; f++) {
+                    ctx.beginPath();
+                    ctx.ellipse(24 + f * 14, -11 - f * 5, 14, 3.2, -0.22, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+                ctx.fillStyle = liv.bodyTop;
+                ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                ctx.beginPath();
+                ctx.roundRect(4, -36, 52, 28, 5);
+                ctx.fill();
+                ctx.stroke();
+
+                // 7. ANIMATED DUAL-ELEMENT REAR WING (MAINPLANE + ACTIVE DRS FLAP)
+                ctx.save();
+                ctx.translate(508, -104);
+                ctx.rotate(-0.18);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 19, 4.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                const setupAngleBoost = (state.downforceSetup / 100) * 0.14;
+                const closedAngleRad = -0.56 - setupAngleBoost;
+                const openAngleRad = -0.07;
+                const currentFlapAngle = closedAngleRad * (1 - state.drsAnimation) + openAngleRad * state.drsAnimation;
+
+                const pivotX = 538;
+                const pivotY = -126;
+
+                ctx.save();
+                ctx.translate(pivotX, pivotY);
+                ctx.rotate(currentFlapAngle);
+
+                if (state.drsAnimation > 0.05) {
+                    ctx.shadowColor = '#00FF66';
+                    ctx.shadowBlur = 15 * state.drsAnimation;
+                }
+
+                ctx.fillStyle = state.drsAnimation > 0.5 ? '#00FF66' : liv.wingFlapClosed;
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(4, 0);
+                ctx.quadraticCurveTo(-16, -6, -34, -2);
+                ctx.quadraticCurveTo(-18, 5, 4, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.fillStyle = state.drsAnimation > 0.5 ? '#00FF66' : liv.accentSecondary;
+                ctx.beginPath();
+                ctx.arc(pivotX, pivotY, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.font = 'bold 11px "JetBrains Mono", monospace';
+                ctx.fillStyle = state.drsAnimation > 0.5 ? '#00FF66' : '#f8fafc';
+                const slotGapMm = Math.round(14 + state.drsAnimation * 71);
+                ctx.fillText(`SLOT: ${slotGapMm}mm`, 480, -146);
+
+                // 8. 18-INCH PIRELLI P-ZERO WHEELS
+                drawF1Wheel(ctx, 118, -38, 38, wheelRotationAngle, liv.accentPrimary, liv.accentSecondary);
+                drawF1Wheel(ctx, 456, -38, 38, wheelRotationAngle, liv.accentPrimary, liv.accentSecondary);
+
+                // 9. OPTIONAL AERODYNAMIC LOAD ARROWS
+                if (state.showLoadVectors) {
+                    drawAeroLoadVectors(ctx);
+                }
+
+                ctx.restore();
+            }
+
+            function drawF1Wheel(ctx, cx, cy, radius, rotAngle, primaryColor, secondaryColor) {
+                ctx.save();
+                ctx.translate(cx, cy);
+
+                const tireGrad = ctx.createRadialGradient(0, 0, radius * 0.55, 0, 0, radius);
+                tireGrad.addColorStop(0, '#1e2430');
+                tireGrad.addColorStop(0.75, '#0f1218');
+                tireGrad.addColorStop(1, '#06070a');
+                ctx.fillStyle = tireGrad;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.rotate(rotAngle);
+                ctx.strokeStyle = primaryColor;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.76, 0.25, Math.PI * 1.15);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.76, Math.PI * 1.25, Math.PI * 1.95);
+                ctx.stroke();
+
+                ctx.fillStyle = '#0b0e14';
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.62, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = secondaryColor;
+                ctx.lineWidth = 2;
+                for (let k = 0; k < 3; k++) {
+                    ctx.rotate((Math.PI * 2) / 3);
+                    ctx.beginPath();
+                    ctx.moveTo(4, 0);
+                    ctx.lineTo(radius * 0.58, 0);
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = primaryColor;
+                ctx.beginPath();
+                ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius + 4, -Math.PI * 0.82, -Math.PI * 0.35);
+                ctx.stroke();
+            }
+
+            function drawAeroLoadVectors(ctx) {
+                const dfScale = Math.min(1.30, state.downforceN / 22000);
+                const dragScale = Math.min(1.30, state.dragForceN / 8000);
+
+                drawVectorArrow(ctx, 35, -95, 35, -95 + (42 * dfScale), '#FFB800', 'FW LOAD');
+                drawVectorArrow(ctx, 285, -135, 285, -135 + (68 * dfScale), '#00F0FF', 'VENTURI');
+                const rwLoadScale = dfScale * (1 - state.drsAnimation * 0.35);
+                drawVectorArrow(ctx, 515, -205, 515, -205 + (55 * rwLoadScale), '#FFB800', 'RW LOAD');
+                drawVectorArrow(ctx, 545, -115, 545 + (65 * dragScale), -115, '#E10600', 'DRAG');
+            }
+
+            function drawVectorArrow(ctx, x1, y1, x2, y2, color, label) {
+                const headLen = 8;
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 3;
+
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.font = 'bold 9px "JetBrains Mono", monospace';
+                ctx.fillText(label, x1 - 18, y1 - 6);
+                ctx.restore();
+            }
+
+            // =========================================================================
+            // 7. MAIN ANIMATION LOOP
+            // =========================================================================
+            let lastTime = performance.now();
+            let frameCount = 0;
+            let fpsTimer = performance.now();
+
+            function animate(now) {
+                const dt = Math.min(0.05, (now - lastTime) / 1000);
+                lastTime = now;
+
+                // FPS Counter
+                frameCount++;
+                if (now - fpsTimer >= 500) {
+                    const currentFps = Math.round((frameCount * 1000) / (now - fpsTimer));
+                    fpsCounter.textContent = `${Math.min(60, currentFps)} FPS`;
+                    frameCount = 0;
+                    fpsTimer = now;
+                }
+
+                // Smoothly animate DRS hydraulic flap actuator
+                const targetDrs = state.drsActive ? 1.0 : 0.0;
+                if (Math.abs(targetDrs - state.drsAnimation) > 0.001) {
+                    state.drsAnimation += (targetDrs - state.drsAnimation) * Math.min(1, dt * 12);
+                    calculateAerodynamics();
+                }
+
+                // Update wheel angular rotation proportional to km/h
+                wheelRotationAngle += (state.speedKmh / 3.6) * dt * 0.45;
+
+                // Canvas Dimensions
+                const width = canvas.width / (window.devicePixelRatio || 1);
+                const height = canvas.height / (window.devicePixelRatio || 1);
+                const groundY = height * 0.84;
+                const carLength = Math.min(width * 0.64, 650);
+                const carStartX = width * 0.14;
+                const carHeightScale = carLength * 0.72;
+
+                // 1. Draw Wind Tunnel Background & Rolling Road
+                drawWindTunnelBackground(width, height, groundY);
+
+                // 2. Step & Draw Airflow Particles / Vector Ribbons using live Cd and Cl
+                const speedNorm = (state.speedKmh - 80) / (370 - 80);
+                const setupNorm = state.downforceSetup / 100;
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].update(dt, speedNorm, setupNorm, state.drsAnimation, state.cd, state.cl);
+                }
+                drawAirflowParticles(carStartX, carLength, groundY, carHeightScale);
+
+                // 3. Draw 2D Formula 1 Car Profile & Animated DRS Rear Wing
+                drawF1CarSideProfile(carStartX, carLength, groundY);
+
+                requestAnimationFrame(animate);
+            }
+
+            // =========================================================================
+            // 8. EVENT LISTENERS & INITIALIZATION
+            // =========================================================================
+            teamSelect.addEventListener('change', (e) => {
+                applyTeamPreset(e.target.value);
+            });
+
+            speedSlider.addEventListener('input', (e) => {
+                state.speedKmh = parseFloat(e.target.value);
+                calculateAerodynamics();
+            });
+
+            downforceSlider.addEventListener('input', (e) => {
+                state.downforceSetup = parseFloat(e.target.value);
+                calculateAerodynamics();
+            });
+
+            densitySlider.addEventListener('input', (e) => {
+                state.airDensity = parseFloat(e.target.value);
+                calculateAerodynamics();
+            });
+
+            drsToggleBtn.addEventListener('click', () => {
+                toggleDRS();
+            });
+
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'SELECT') {
+                    e.preventDefault();
+                    toggleDRS();
+                }
+            });
+
+            modeStreamlinesBtn.addEventListener('click', () => {
+                state.visualMode = 'streamlines';
+                modeStreamlinesBtn.className = 'px-3 py-1.5 rounded-md bg-f1cyan text-slate-950 font-bold transition-all';
+                modeParticlesBtn.className = 'px-3 py-1.5 rounded-md text-slate-300 hover:text-white transition-all';
+            });
+
+            modeParticlesBtn.addEventListener('click', () => {
+                state.visualMode = 'particles';
+                modeParticlesBtn.className = 'px-3 py-1.5 rounded-md bg-f1cyan text-slate-950 font-bold transition-all';
+                modeStreamlinesBtn.className = 'px-3 py-1.5 rounded-md text-slate-300 hover:text-white transition-all';
+            });
+
+            toggleForceVectorsBtn.addEventListener('click', () => {
+                state.showLoadVectors = !state.showLoadVectors;
+                toggleForceVectorsBtn.textContent = `LOAD ARROWS: ${state.showLoadVectors ? 'ON' : 'OFF'}`;
+                toggleForceVectorsBtn.className = state.showLoadVectors
+                    ? 'px-3 py-1.5 rounded-lg text-xs font-mono border border-f1amber/50 bg-f1amber/10 text-f1amber hover:bg-f1amber/20 transition-all'
+                    : 'px-3 py-1.5 rounded-lg text-xs font-mono border border-white/10 bg-slate-900 text-slate-400 hover:text-white transition-all';
+            });
+
+            document.querySelectorAll('.preset-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const preset = btn.getAttribute('data-preset');
+                    if (preset === 'monza') {
+                        state.speedKmh = 352;
+                        state.downforceSetup = 18;
+                        state.airDensity = 1.210;
+                        toggleDRS(true);
+                    } else if (preset === 'monaco') {
+                        state.speedKmh = 215;
+                        state.downforceSetup = 98;
+                        state.airDensity = 1.225;
+                        toggleDRS(false);
+                    } else if (preset === 'mexico') {
+                        state.speedKmh = 345;
+                        state.downforceSetup = 92;
+                        state.airDensity = 0.950;
+                        toggleDRS(true);
+                    }
+
+                    speedSlider.value = state.speedKmh;
+                    downforceSlider.value = state.downforceSetup;
+                    densitySlider.value = state.airDensity;
+                    calculateAerodynamics();
+                });
+            });
+
+            // Initialize default team (Red Bull Racing) and start CFD loop
+            applyTeamPreset('redbull');
+            requestAnimationFrame(animate);
+        })();
+    </script>
+</body>
+</html>
